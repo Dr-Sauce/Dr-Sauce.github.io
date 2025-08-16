@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Forte - App Store Style</title>
+<style>
+  body { margin:0; font-family:sans-serif; background:white; display:none; }
+  header { display:flex; align-items:center; padding:8px 16px; background:white; border-bottom:1px solid #ccc; height:44px; }
+  .back-button { text-decoration:none; color:#007AFF; font-size:16px; }
+  .app-header { display:flex; align-items:center; padding:20px; }
+  .app-icon { width:100px; height:100px; border-radius:20px; margin-left:10px; pointer-events:none; -webkit-user-drag:none; }
+  .app-info { margin-left:20px; }
+  .app-title { font-size:24px; font-weight:bold; margin:0; }
+  .app-subtitle { color:#555; margin:4px 0; }
+  .get-button { display:inline-block; padding:10px 18px; background:#007AFF; color:white; border-radius:16px; text-decoration:none; font-size:14px; font-weight:500; cursor:pointer; user-select:none; }
+  .screenshots { display:flex; overflow-x:auto; padding:20px; gap:12px; }
+  .screenshots img { border-radius:12px; pointer-events:none; -webkit-user-drag:none; height:400px; width:auto; }
+  .section { padding:0 20px 20px; }
+  h2 { font-size:20px; display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
+  .release-notes a { color:#007AFF; text-decoration:none; }
+  .version-history-btn { background:transparent; border:none; color:#007AFF; font-size:14px; cursor:pointer; }
+  .overlay { position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(255,255,255,0.98); z-index:9999; display:none; flex-direction:column; overflow-y:auto; }
+  .overlay .close-btn { position:sticky; top:20px; z-index:1000; width:36px; height:36px; border-radius:50%; background:white; border:none; font-size:24px; font-weight:bold; color:#007AFF; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0; box-shadow:0 2px 6px rgba(0,0,0,0.2); margin-left:20px; }
+  #full-release-notes { padding:40px 20px 20px 20px; box-sizing:border-box; word-wrap:break-word; overflow-wrap:break-word; }
+
+  /* Long press action sheet */
+  #action-sheet-overlay { position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.3); z-index:9998; display:none; }
+  #action-sheet { position:fixed; bottom:-100%; left:0; width:100%; z-index:10000; transition:bottom 0.3s ease; display:flex; flex-direction:column; font-size:16px; }
+  #action-sheet.show { bottom:0; }
+  #action-sheet .versions { background:rgba(255,255,255,0.63); backdrop-filter:blur(20px); margin:5px; border-radius:12px; text-align:center; }
+  #action-sheet button { display:block; width:100%; padding:16px; background:transparent; border:none; border-bottom:1px solid #ccc; font-size:16px; cursor:pointer; text-align:center; color:#3478F5; }
+  #action-sheet .versions button:last-child {border-bottom: none;}
+  #action-sheet .cancel {background:white; margin:5px; border-radius:12px; text-align:center;}
+  #action-sheet .cancel button { font-weight:bold; color:#3478F5; border:none; }
+</style>
+</head>
+<body>
+<header>
+  <a href="#" class="back-button">Home</a>
+</header>
+
+<div class="app-header">
+  <img id="app-icon" alt="App Icon" class="app-icon">
+  <div class="app-info">
+    <h1 class="app-title">Forte</h1>
+    <div class="app-subtitle" id="app-subtitle">Convert DEB to IPA easily</div>
+    <a href="#" class="get-button" id="get-button">GET</a>
+  </div>
+</div>
+
+<div class="screenshots" id="screenshots-container"></div>
+
+<div id="release-notes-container" class="section release-notes"></div>
+
+<div id="overlay" class="overlay">
+  <button class="close-btn" id="overlay-close">&times;</button>
+  <div id="full-release-notes" class="release-notes"></div>
+</div>
+
+<!-- Long press action sheet -->
+<div id="action-sheet-overlay"></div>
+<div id="action-sheet">
+  <div class="versions" id="action-sheet-versions"></div>
+  <div class="cancel"><button id="action-sheet-cancel">Cancel</button></div>
+</div>
+
+<script>
+const Repo = 'Forte';
+const apiContents = `https://api.github.com/repos/Dr-Sauce/${Repo}/contents`;
+const apiRepo = `https://api.github.com/repos/Dr-Sauce/${Repo}`;
+const apiReleases = `https://api.github.com/repos/Dr-Sauce/${Repo}/tags`;
+
+let latestIcloudLink = null;
+let allReleases = [];
+
+// Subtitle
+async function loadSubtitle() {
+  try {
+    const res = await fetch(apiRepo);
+    const data = await res.json();
+    if(data.description) document.getElementById('app-subtitle').textContent = data.description;
+  } catch(err){}
+}
+
+// Icon & Screenshots
+async function loadRepoFiles() {
+  try {
+    const res = await fetch(apiContents);
+    const files = await res.json();
+
+    const iconFile = files.find(f => f.name.startsWith('icon.'));
+    if(iconFile) document.getElementById('app-icon').src = iconFile.download_url;
+
+    const screenshots = files.filter(f => /^Screenshot_\d+\.(png|jpg)$/.test(f.name))
+                             .sort((a,b)=>parseInt(a.name.match(/Screenshot_(\d+)/)[1])-parseInt(b.name.match(/Screenshot_(\d+)/)[1]));
+    const screenshotsContainer = document.getElementById('screenshots-container');
+    screenshots.forEach(s=>{
+      const img=document.createElement('img');
+      img.src=s.download_url;
+      screenshotsContainer.appendChild(img);
+    });
+
+    loadReleaseNotes();
+
+  } catch(err) {
+    console.error('Failed to load repo contents', err);
+    document.body.style.display='block';
+  }
+}
+
+// Parse Release Notes
+async function loadReleaseNotes() {
+  try {
+    const tagsRes = await fetch(apiReleases);
+    const tags = await tagsRes.json();
+    if(!tags.length){ document.body.style.display='block'; return; }
+
+    tags.sort((a,b)=> {
+      const aParts=a.name.split('.').map(Number);
+      const bParts=b.name.split('.').map(Number);
+      for(let i=0;i<Math.max(aParts.length,bParts.length);i++){
+        const diff=(aParts[i]||0)-(bParts[i]||0);
+        if(diff!==0) return diff;
+      }
+      return 0;
+    });
+
+    let latestHTML='';
+    let fullHTML='';
+    let foundIcloud = false;
+
+    for(let i=tags.length-1;i>=0;i--){
+      const tag=tags[i];
+      const releaseUrl=`https://api.github.com/repos/dr-sauce/${Repo}/releases/tags/${tag.name}`;
+      const releaseRes = await fetch(releaseUrl);
+      if(!releaseRes.ok) continue;
+      const release = await releaseRes.json();
+      let bodyText = release.body ? release.body.trim() : '';
+
+      // Extract iCloud link from newest available release
+      if(!foundIcloud){
+        const icloudMatch = bodyText.match(/https:\/\/www\.icloud\.com\/shortcuts\/[^\s)]+/);
+        if(icloudMatch) {
+          latestIcloudLink = icloudMatch[0];
+          foundIcloud = true;
+        }
+      }
+
+      let lines=[];
+      const changelogMatch = bodyText.match(/#\s*Changelog:?\s*([\s\S]*)/i);
+      if(changelogMatch){
+        changelogMatch[1].split('\n').forEach(line=>{
+          line=line.trim();
+          if(line.startsWith('-')) line=line.replace(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g,'<a href="$2" target="_blank">$1</a>'),lines.push(line);
+        });
+      } else if(!/#/.test(bodyText)) {
+        bodyText.split('\n').forEach(line=>{
+          line=line.trim();
+          if(line.startsWith('-')) line=line.replace(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g,'<a href="$2" target="_blank">$1</a>'),lines.push(line);
+        });
+      }
+
+      if(!lines.length) lines.push(i===0?'- Initial release.':'- Fixed minor issues.');
+
+      const releaseHTML = `<strong>${release.name}</strong><br>${lines.join('<br>')}<br><br>`;
+      fullHTML+=releaseHTML;
+      if(i===tags.length-1) latestHTML = releaseHTML;
+
+      allReleases.push({version:release.name, icloud:bodyText.match(/https:\/\/www\.icloud\.com\/shortcuts\/[^\s)]+/)?.[0]||null});
+    }
+
+    document.getElementById('release-notes-container').innerHTML=`<h2>Release Notes <button id="version-history-btn" class="version-history-btn">Version History</button></h2>${latestHTML}`;
+    document.getElementById('full-release-notes').innerHTML=fullHTML;
+
+    const getButton=document.getElementById('get-button');
+    getButton.addEventListener('click', ()=>{ if(latestIcloudLink) window.open(latestIcloudLink,'_blank'); });
+
+    // Long press for GET button
+    let pressTimer=null;
+    getButton.addEventListener('mousedown', startPress);
+    getButton.addEventListener('touchstart', startPress);
+    getButton.addEventListener('mouseup', cancelPress);
+    getButton.addEventListener('mouseleave', cancelPress);
+    getButton.addEventListener('touchend', cancelPress);
+
+    function startPress(e){
+      e.preventDefault();
+      pressTimer=setTimeout(()=>{ showActionSheet(); },600);
+    }
+    function cancelPress(){ clearTimeout(pressTimer); }
+
+    const actionSheet = document.getElementById('action-sheet');
+    const actionOverlay = document.getElementById('action-sheet-overlay');
+    const actionVersions = document.getElementById('action-sheet-versions');
+    const actionCancel = document.getElementById('action-sheet-cancel');
+
+    function showActionSheet(){
+      actionVersions.innerHTML='';
+      allReleases.forEach(r=>{
+        const btn=document.createElement('button');
+        btn.textContent=r.version;
+        btn.onclick=()=>{ if(r.icloud) window.open(r.icloud,'_blank'); hideActionSheet(); };
+        actionVersions.appendChild(btn);
+      });
+      actionSheet.classList.add('show');
+      actionOverlay.style.display='block';
+      document.body.style.overflow='hidden';
+    }
+    function hideActionSheet(){
+      actionSheet.classList.remove('show');
+      actionOverlay.style.display='none';
+      document.body.style.overflow='';
+    }
+
+    actionCancel.onclick=hideActionSheet;
+    actionOverlay.onclick=hideActionSheet;
+
+    // Version History button opens overlay
+    const overlay = document.getElementById('overlay');
+    const overlayClose = document.getElementById('overlay-close');
+    const versionHistoryBtn = document.getElementById('version-history-btn');
+    versionHistoryBtn.onclick=()=>{ overlay.style.display='flex'; document.body.style.overflow='hidden'; };
+    overlayClose.onclick=()=>{ overlay.style.display='none'; document.body.style.overflow=''; };
+
+    document.body.style.display='block';
+
+  } catch(err){
+    document.getElementById('release-notes-container')?.remove();
+    document.body.style.display='block';
+  }
+}
+
+loadSubtitle();
+loadRepoFiles();
+</script>
+</body>
+</html>
