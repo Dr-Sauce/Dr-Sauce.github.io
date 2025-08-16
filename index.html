@@ -57,7 +57,7 @@
   #action-sheet .versions { background:rgba(255,255,255,0.9); backdrop-filter:blur(40px); margin:5px; border-radius:14px; text-align:center; }
   #action-sheet button { display:block; width:100%; padding:16px; background:transparent; border:none; border-bottom:1px solid #b1b1b3; font-size:16px; cursor:pointer; text-align:center; color:#007aff; }
   #action-sheet .versions button:last-child {border-bottom: none;}
-  #action-sheet .cancel {background:white; margin:5px; margin-top:-0.05px; height:56.8px; border-radius:14px; text-align:center; display: flex; align-items: center; justify-content: center;}
+  #action-sheet .cancel {background:white; margin:5px; height:56.8px; border-radius:14px; text-align:center; display: flex; align-items: center; justify-content: center;}
   #action-sheet .cancel button { font-weight:bold; font-size: 19px; color:#007aff; border:none; }
 
   .screenshots, .section { max-width: 100%; }
@@ -260,6 +260,17 @@ async function loadReleaseNotes() {
     const versionHistoryBtn = document.getElementById('version-history-btn');
     versionHistoryBtn.onclick=()=>{ overlay.style.display='flex'; document.body.style.overflow='hidden'; };
     overlayClose.onclick=()=>{ overlay.style.display='none'; document.body.style.overflow=''; };
+
+    // --- Added: change cancel button color while pressing ---
+    const cancelDiv = document.querySelector('#action-sheet .cancel');
+    let originalBg = cancelDiv.style.backgroundColor || 'white';
+
+    cancelDiv.addEventListener('mousedown', () => cancelDiv.style.backgroundColor = '#ececec');
+    cancelDiv.addEventListener('touchstart', () => cancelDiv.style.backgroundColor = '#ececec');
+    cancelDiv.addEventListener('mouseup', () => cancelDiv.style.backgroundColor = originalBg);
+    cancelDiv.addEventListener('mouseleave', () => cancelDiv.style.backgroundColor = originalBg);
+    cancelDiv.addEventListener('touchend', () => cancelDiv.style.backgroundColor = originalBg);
+    cancelDiv.addEventListener('touchcancel', () => cancelDiv.style.backgroundColor = originalBg);
 
     document.body.style.display='block';
 
